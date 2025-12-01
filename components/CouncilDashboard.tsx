@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, GuestRequest, RequestStatus } from '../types';
+import { User, GuestRequest, RequestStatus, Vendor } from '../types';
 import { backendService } from '../services/backendService';
 import { Button } from './Button';
 
@@ -7,10 +7,21 @@ interface Props {
   user: User;
   refreshData: () => void;
   requests: GuestRequest[];
+  vendors: Vendor[];
 }
 
-export const CouncilDashboard: React.FC<Props> = ({ user, refreshData, requests }) => {
+export const CouncilDashboard: React.FC<Props> = ({ user, refreshData, requests, vendors }) => {
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [isSavingVendor, setIsSavingVendor] = useState(false);
+  const [vendorName, setVendorName] = useState('');
+  const [vendorCompany, setVendorCompany] = useState('');
+  const [vendorCategory, setVendorCategory] = useState('');
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editCompany, setEditCompany] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [isUpdatingVendor, setIsUpdatingVendor] = useState(false);
   const pendingRequests = requests.filter(r => r.status === RequestStatus.PENDING);
   const historyRequests = requests.filter(r => r.status !== RequestStatus.PENDING);
 
@@ -33,11 +44,102 @@ export const CouncilDashboard: React.FC<Props> = ({ user, refreshData, requests 
     }
   };
 
+  const handleCreateVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vendorName.trim()) {
+      alert('Vendor name is required');
+      return;
+    }
+
+    setIsSavingVendor(true);
+    try {
+      await backendService.createVendor({
+        name: vendorName.trim(),
+        companyName: vendorCompany.trim() || undefined,
+        category: vendorCategory.trim() || undefined,
+        isActive: true,
+      });
+
+      console.log('[CouncilDashboard] Successfully created vendor');
+      setVendorName('');
+      setVendorCompany('');
+      setVendorCategory('');
+      setIsVendorModalOpen(false);
+      refreshData();
+    } catch (error: any) {
+      console.error('[CouncilDashboard] Error creating vendor:', error);
+      alert(error.message || 'Failed to create vendor. Please try again.');
+    } finally {
+      setIsSavingVendor(false);
+    }
+  };
+
+  const startEditVendor = (vendor: Vendor) => {
+    setEditingVendorId(vendor.id);
+    setEditName(vendor.name);
+    setEditCompany(vendor.company);
+    setEditCategory(vendor.category);
+  };
+
+  const cancelEditVendor = () => {
+    setEditingVendorId(null);
+    setEditName('');
+    setEditCompany('');
+    setEditCategory('');
+    setIsUpdatingVendor(false);
+  };
+
+  const handleUpdateVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingVendorId) return;
+    if (!editName.trim()) {
+      alert('Vendor name is required');
+      return;
+    }
+
+    setIsUpdatingVendor(true);
+    try {
+      await backendService.updateVendor(editingVendorId, {
+        name: editName.trim(),
+        companyName: editCompany.trim() || undefined,
+        category: editCategory.trim() || undefined,
+      });
+      console.log('[CouncilDashboard] Successfully updated vendor');
+      cancelEditVendor();
+      refreshData();
+    } catch (error: any) {
+      console.error('[CouncilDashboard] Error updating vendor:', error);
+      alert(error.message || 'Failed to update vendor. Please try again.');
+      setIsUpdatingVendor(false);
+    }
+  };
+
+  const handleDeleteVendor = async (vendor: Vendor) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete vendor "${vendor.name}"? This will remove it from the gate dashboard.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await backendService.deleteVendor(vendor.id);
+      console.log('[CouncilDashboard] Successfully deleted vendor');
+      if (editingVendorId === vendor.id) {
+        cancelEditVendor();
+      }
+      refreshData();
+    } catch (error: any) {
+      console.error('[CouncilDashboard] Error deleting vendor:', error);
+      alert(error.message || 'Failed to delete vendor. Please try again.');
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div>
         <h2 className="text-2xl font-bold text-slate-800">Council Approvals</h2>
-        <p className="text-slate-500">Review detailed guest entry requests. Approving a request generates codes for all listed guests.</p>
+        <p className="text-slate-500">
+          Review detailed guest entry requests. Approving a request generates codes for all listed guests.
+        </p>
       </div>
 
       <div className="grid gap-6">
@@ -198,6 +300,205 @@ export const CouncilDashboard: React.FC<Props> = ({ user, refreshData, requests 
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Current Pre‑approved Vendors Overview */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-slate-700 text-lg flex items-center gap-2">
+            <i className="fa-solid fa-list-check text-indigo-600" /> Pre‑approved Vendors ({vendors.length})
+          </h3>
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => {
+              setVendorName('');
+              setVendorCompany('');
+              setVendorCategory('');
+              setIsVendorModalOpen(true);
+            }}
+          >
+            <i className="fa-solid fa-plus mr-1" /> Add New
+          </Button>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          {vendors.length === 0 ? (
+            <div className="p-6 text-center text-slate-400 text-sm">
+              No vendors configured yet. Use the form above to add your first pre‑approved vendor.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left font-semibold text-slate-600">Name</th>
+                    <th className="px-6 py-3 text-left font-semibold text-slate-600">Company</th>
+                    <th className="px-6 py-3 text-left font-semibold text-slate-600">Category</th>
+                    <th className="px-6 py-3 text-right font-semibold text-slate-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {vendors.map((vendor) => (
+                    <tr key={vendor.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-3 text-slate-800 font-medium">
+                        {editingVendorId === vendor.id ? (
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                          />
+                        ) : (
+                          vendor.name
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-slate-600">
+                        {editingVendorId === vendor.id ? (
+                          <input
+                            type="text"
+                            value={editCompany}
+                            onChange={(e) => setEditCompany(e.target.value)}
+                            className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                          />
+                        ) : (
+                          vendor.company
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-slate-600">
+                        {editingVendorId === vendor.id ? (
+                          <input
+                            type="text"
+                            value={editCategory}
+                            onChange={(e) => setEditCategory(e.target.value)}
+                            className="w-full border border-slate-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                          />
+                        ) : (
+                          vendor.category
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-right space-x-2 whitespace-nowrap">
+                        {editingVendorId === vendor.id ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={handleUpdateVendor}
+                              isLoading={isUpdatingVendor}
+                              disabled={isUpdatingVendor}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={cancelEditVendor}
+                              disabled={isUpdatingVendor}
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => startEditVendor(vendor)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 border-red-300 hover:bg-red-50"
+                              onClick={() => handleDeleteVendor(vendor)}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Add / Edit Vendor Modal */}
+      {isVendorModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-fade-in-up">
+            <h3 className="text-xl font-bold text-slate-800 mb-2 flex items-center gap-2">
+              <i className="fa-solid fa-truck-fast text-indigo-600" />
+              Add Pre‑approved Vendor
+            </h3>
+            <p className="text-slate-500 text-sm mb-4">
+              Vendors added here appear instantly in the gate dashboard for logging entries and exits.
+            </p>
+            <form className="space-y-4" onSubmit={handleCreateVendor}>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Vendor / Contact Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={vendorName}
+                  onChange={(e) => setVendorName(e.target.value)}
+                  placeholder="e.g. Ramesh Kumar"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Company / Organisation
+                </label>
+                <input
+                  type="text"
+                  value={vendorCompany}
+                  onChange={(e) => setVendorCompany(e.target.value)}
+                  placeholder="e.g. ABC Canteen Services"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Category / Type
+                </label>
+                <input
+                  type="text"
+                  value={vendorCategory}
+                  onChange={(e) => setVendorCategory(e.target.value)}
+                  placeholder="e.g. Canteen, Maintenance, Delivery"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setIsVendorModalOpen(false);
+                  }}
+                  disabled={isSavingVendor}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  isLoading={isSavingVendor}
+                  disabled={isSavingVendor}
+                >
+                  {isSavingVendor ? 'Saving...' : 'Add Vendor'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

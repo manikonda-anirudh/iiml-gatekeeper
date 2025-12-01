@@ -342,6 +342,7 @@ const App: React.FC = () => {
           user={user} 
           refreshData={loadData} 
           requests={guestRequests}
+          vendors={vendors}
         />
       )}
 

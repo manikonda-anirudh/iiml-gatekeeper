@@ -32,7 +32,7 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 25;
+  const ITEMS_PER_PAGE = 10;
 
   // Get approved guest requests from props
   const approvedRequests = guestRequests.filter(r => r.status === RequestStatus.APPROVED);
@@ -62,6 +62,28 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
         approvedAt: undefined,
         rejectionReason: undefined
       }));
+  }, [logs]);
+
+  // Compute latest status for each vendor based on movement logs
+  // Default: OUTSIDE (no logs yet) → ENTRY enabled, EXIT disabled
+  const vendorStatusMap = useMemo(() => {
+    const status: Record<string, 'INSIDE' | 'OUTSIDE'> = {};
+
+    const vendorLogs = logs
+      .filter(log => log.isVendor)
+      .slice()
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    vendorLogs.forEach(log => {
+      if (!log.userId) return;
+      if (log.type === MovementType.ENTRY) {
+        status[log.userId] = 'INSIDE';
+      } else if (log.type === MovementType.EXIT) {
+        status[log.userId] = 'OUTSIDE';
+      }
+    });
+
+    return status;
   }, [logs]);
 
   // Sort logs by newest first for the ledger
@@ -292,26 +314,43 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
           <div className="overflow-y-auto pr-2 custom-scrollbar flex-grow grid grid-cols-1 sm:grid-cols-2 gap-4">
             {vendors.map(vendor => (
               <div key={vendor.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 hover:border-slate-600 transition-colors h-fit">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <p className="text-white font-bold text-sm">{vendor.name}</p>
-                    <p className="text-xs text-slate-400">{vendor.company}</p>
-                  </div>
+                <div className="mb-3">
+                  <p className="text-white font-bold text-sm">{vendor.name}</p>
+                  <p className="text-xs text-slate-400">{vendor.company}</p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-2">
-                  <button 
-                    onClick={() => openVendorModal(vendor, MovementType.ENTRY)}
-                    className="flex items-center justify-center gap-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 text-xs py-2 rounded transition-colors border border-green-600/30"
-                  >
-                    Entry
-                  </button>
-                  <button 
-                    onClick={() => openVendorModal(vendor, MovementType.EXIT)}
-                    className="flex items-center justify-center gap-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 text-xs py-2 rounded transition-colors border border-amber-600/30"
-                  >
-                    Exit
-                  </button>
+                  {(() => {
+                    const status = vendorStatusMap[vendor.id] || 'OUTSIDE';
+                    const canEntry = status === 'OUTSIDE';
+                    const canExit = status === 'INSIDE';
+                    return (
+                      <>
+                        <button 
+                          onClick={canEntry ? () => openVendorModal(vendor, MovementType.ENTRY) : undefined}
+                          disabled={!canEntry}
+                          className={`flex items-center justify-center gap-1 text-xs py-2 rounded transition-colors border ${
+                            canEntry
+                              ? 'bg-green-600/20 hover:bg-green-600/30 text-green-400 border-green-600/30'
+                              : 'bg-slate-700/60 text-slate-500 border-slate-600 cursor-not-allowed'
+                          }`}
+                        >
+                          Entry
+                        </button>
+                        <button 
+                          onClick={canExit ? () => openVendorModal(vendor, MovementType.EXIT) : undefined}
+                          disabled={!canExit}
+                          className={`flex items-center justify-center gap-1 text-xs py-2 rounded transition-colors border ${
+                            canExit
+                              ? 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border-amber-600/30'
+                              : 'bg-slate-700/60 text-slate-500 border-slate-600 cursor-not-allowed'
+                          }`}
+                        >
+                          Exit
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             ))}

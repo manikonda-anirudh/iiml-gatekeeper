@@ -197,6 +197,43 @@ export const backendService = {
     return response.json();
   },
 
+  // Update an existing vendor (e.g. toggle active status or edit details)
+  updateVendor: async (
+    vendorId: string,
+    updates: {
+      name?: string;
+      companyName?: string;
+      category?: string;
+      isActive?: boolean;
+    }
+  ): Promise<Vendor> => {
+    const response = await fetch(`${API_BASE_URL}/vendors/${vendorId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update vendor');
+    }
+    return response.json();
+  },
+
+  // Delete vendor
+  deleteVendor: async (vendorId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/vendors/${vendorId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok && response.status !== 204) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || 'Failed to delete vendor');
+    }
+  },
+
   // Record vendor movement (Flow 3: Direct INSERT into movement_logs)
   recordVendorMovement: async (movementData: {
     vendorId: string;

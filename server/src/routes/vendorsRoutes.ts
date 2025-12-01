@@ -4,6 +4,7 @@ import {
   getVendorById,
   createVendor,
   updateVendor,
+  deleteVendor,
   recordVendorMovement
 } from '../controllers/vendorsController.js';
 
@@ -23,4 +24,7 @@ vendorsRoutes.post('/', createVendor);
 
 // Update vendor
 vendorsRoutes.patch('/:id', updateVendor);
+
+// Delete vendor
+vendorsRoutes.delete('/:id', deleteVendor);
 

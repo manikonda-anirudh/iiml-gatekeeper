@@ -151,6 +151,29 @@ export const updateVendor = async (req: Request, res: Response) => {
   }
 };
 
+// Delete vendor
+export const deleteVendor = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('vendors')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('[VendorsController] Error deleting vendor:', error);
+      return res.status(400).json({ error: 'Failed to delete vendor', details: error.message });
+    }
+
+    console.log(`[VendorsController] Successfully deleted vendor: ${id}`);
+    return res.status(204).send();
+  } catch (error: any) {
+    console.error('[VendorsController] Error in deleteVendor:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+};
+
 // Record vendor movement (Flow 3: Direct INSERT into movement_logs)
 // Guard selects vendor and logs entry/exit directly
 export const recordVendorMovement = async (req: Request, res: Response) => {
@@ -167,6 +190,49 @@ export const recordVendorMovement = async (req: Request, res: Response) => {
 
     if (!['ENTRY', 'EXIT'].includes(actionType)) {
       return res.status(400).json({ error: 'Invalid actionType. Must be ENTRY or EXIT' });
+    }
+
+    // Enforce vendor in-campus / out-of-campus status based on last completed log
+    // Default: vendor is OUTSIDE (no logs yet) → only ENTRY allowed
+    const { data: lastLog, error: statusError } = await supabase
+      .from('movement_logs')
+      .select('movement_type, timestamp')
+      .eq('vendor_id', vendorId)
+      .eq('entity_type', 'VENDOR')
+      .eq('status', 'COMPLETED')
+      .order('timestamp', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (statusError && statusError.code !== 'PGRST116') { // PGRST116 = no rows
+      console.error('[VendorsController] Error fetching vendor status:', statusError);
+      return res.status(400).json({ error: 'Failed to determine vendor status', details: statusError.message });
+    }
+
+    if (!lastLog) {
+      // No previous completed movements: vendor is outside → only ENTRY allowed
+      if (actionType === 'EXIT') {
+        return res.status(400).json({
+          error: 'Invalid EXIT for vendor',
+          details: 'Vendor has no prior ENTRY log. Please record an ENTRY before EXIT.'
+        });
+      }
+    } else if (lastLog.movement_type === 'ENTRY') {
+      // Vendor currently inside → only EXIT allowed
+      if (actionType === 'ENTRY') {
+        return res.status(400).json({
+          error: 'Vendor already inside campus',
+          details: 'Please record an EXIT before another ENTRY for this vendor.'
+        });
+      }
+    } else if (lastLog.movement_type === 'EXIT') {
+      // Vendor currently outside → only ENTRY allowed
+      if (actionType === 'EXIT') {
+        return res.status(400).json({
+          error: 'Vendor already outside campus',
+          details: 'Please record an ENTRY before another EXIT for this vendor.'
+        });
+      }
     }
 
     // Build remarks with vehicle number if provided
