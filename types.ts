@@ -98,4 +98,5 @@ export interface StudentMovementRequest {
   approvedBy?: string;
   approvedAt?: string; // ISO String
   rejectionReason?: string; // Only set when status is REJECTED
+  details?: string; // Optional remarks / vehicle info from request
 }

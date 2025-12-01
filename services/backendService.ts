@@ -384,6 +384,7 @@ export const backendService = {
   createStudentMovementRequest: async (requestData: {
     studentId: string;
     movementType: MovementType;
+    remarks?: string;
   }): Promise<StudentMovementRequest> => {
     const response = await fetch(`${API_BASE_URL}/movement-logs`, {
       method: 'POST',
@@ -395,6 +396,7 @@ export const backendService = {
         entityType: 'STUDENT',
         studentId: requestData.studentId,
         // gateUserId is NULL for PENDING requests
+        remarks: requestData.remarks,
       }),
     });
 
@@ -412,7 +414,8 @@ export const backendService = {
       createdAt: log.timestamp,
       approvedBy: log.approvedBy,
       approvedAt: log.status === 'COMPLETED' ? log.timestamp : undefined,
-      rejectionReason: undefined
+      rejectionReason: undefined,
+      details: log.details,
     };
   },
 
@@ -423,6 +426,7 @@ export const backendService = {
       status: 'COMPLETED' | 'REJECTED';
       gateUserId: string;
       rejectionReason?: string;
+      remarks?: string;
     }
   ): Promise<StudentMovementRequest> => {
     const response = await fetch(`${API_BASE_URL}/movement-logs/student/${requestId}`, {

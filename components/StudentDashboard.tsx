@@ -38,6 +38,12 @@ export const StudentDashboard: React.FC<Props> = ({ user, refreshData, logs, req
   const [isInside, setIsInside] = useState<boolean>(true); // Default to inside
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
 
+  // Student movement request modal (vehicle/remarks) 
+  const [showMovementModal, setShowMovementModal] = useState(false);
+  const [movementTypePending, setMovementTypePending] = useState<MovementType | null>(null);
+  const [movementVehicleNumber, setMovementVehicleNumber] = useState('');
+  const [movementRemarks, setMovementRemarks] = useState('');
+
   // Form States - initialize with safe defaults
   const [tripDetails, setTripDetails] = useState({
     purpose: '',
@@ -141,29 +147,47 @@ export const StudentDashboard: React.FC<Props> = ({ user, refreshData, logs, req
     });
   }, [user?.id, user?.name, safeLogs.length, safeRequests.length, myLogs.length, isInside, user?.mobileNumber, user?.hostelRoomNo, user?.emergencyContact]);
 
-  const handleMovementRequest = async (type: MovementType) => {
+  const openMovementModal = (type: MovementType) => {
+    console.log('[StudentDashboard] Movement request clicked:', { type, userId: user.id });
+    // Check if there's already a pending request (Flow 1: PENDING status in movement_logs)
+    const existingPending = myMovements.find(
+      req => req.userId === user.id && 
+             req.type === type && 
+             req.status === RequestStatus.PENDING
+    );
+    
+    if (existingPending) {
+      alert(`You already have a pending ${type} request. Please wait for gate staff approval.`);
+      return;
+    }
+
+    setMovementTypePending(type);
+    setMovementVehicleNumber('');
+    setMovementRemarks('');
+    setShowMovementModal(true);
+  };
+
+  const submitMovementRequest = async () => {
+    if (!movementTypePending) return;
     try {
-      console.log('[StudentDashboard] Movement request clicked:', { type, userId: user.id });
-      
-      // Check if there's already a pending request (Flow 1: PENDING status in movement_logs)
-      const existingPending = myMovements.find(
-        req => req.userId === user.id && 
-               req.type === type && 
-               req.status === RequestStatus.PENDING
-      );
-      
-      if (existingPending) {
-        alert(`You already have a pending ${type} request. Please wait for gate staff approval.`);
-        return;
-      }
+      const vehicleText = movementVehicleNumber.trim()
+        ? `Vehicle: ${movementVehicleNumber.trim()}`
+        : '';
+      const remarksText = movementRemarks.trim();
+      const combinedRemarks = [vehicleText, remarksText].filter(Boolean).join(' | ') || undefined;
 
       // Create movement request (Flow 1: INSERT into movement_logs with status PENDING)
       await backendService.createStudentMovementRequest({
         studentId: user.id,
-        movementType: type
+        movementType: movementTypePending,
+        remarks: combinedRemarks,
       });
 
       console.log('[StudentDashboard] Movement request created successfully');
+      setShowMovementModal(false);
+      setMovementTypePending(null);
+      setMovementVehicleNumber('');
+      setMovementRemarks('');
       
       // Refresh data to show the new request
       refreshData();
@@ -354,7 +378,7 @@ export const StudentDashboard: React.FC<Props> = ({ user, refreshData, logs, req
              <Button 
                variant="secondary" 
                className="flex-1 h-24 flex flex-col gap-2"
-               onClick={() => handleMovementRequest(MovementType.EXIT)}
+               onClick={() => openMovementModal(MovementType.EXIT)}
                disabled={!isInside}
              >
                <i className="fa-solid fa-person-walking-arrow-right text-2xl text-slate-600"></i>
@@ -363,7 +387,7 @@ export const StudentDashboard: React.FC<Props> = ({ user, refreshData, logs, req
              <Button 
                variant="primary" 
                className="flex-1 h-24 flex flex-col gap-2"
-               onClick={() => handleMovementRequest(MovementType.ENTRY)}
+               onClick={() => openMovementModal(MovementType.ENTRY)}
                disabled={isInside}
              >
                <i className="fa-solid fa-person-walking-luggage text-2xl text-white"></i>
@@ -649,6 +673,66 @@ export const StudentDashboard: React.FC<Props> = ({ user, refreshData, logs, req
             <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 rounded-b-xl">
                <Button type="button" variant="secondary" onClick={() => setShowGuestModal(false)}>Cancel</Button>
                <Button onClick={submitGuestRequest}>Submit for Approval</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Movement Request Modal */}
+      {showMovementModal && movementTypePending && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md my-8 flex flex-col animate-fade-in-up">
+            <div className="p-6 border-b border-slate-100">
+              <h3 className="text-xl font-bold text-slate-800">
+                Request {movementTypePending === MovementType.ENTRY ? 'Entry' : 'Exit'}
+              </h3>
+              <p className="text-slate-500 text-sm mt-1">
+                Provide optional vehicle number and remarks for gate staff to verify.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Vehicle Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={movementVehicleNumber}
+                  onChange={(e) => setMovementVehicleNumber(e.target.value)}
+                  placeholder="e.g. UP32-XX-XXXX"
+                  className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-iim-green focus:border-transparent outline-none"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Remarks (Optional)
+                </label>
+                <textarea
+                  value={movementRemarks}
+                  onChange={(e) => setMovementRemarks(e.target.value)}
+                  placeholder="Any additional notes for this movement..."
+                  rows={3}
+                  className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-iim-green focus:border-transparent outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 rounded-b-xl">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setShowMovementModal(false);
+                  setMovementTypePending(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button onClick={submitMovementRequest}>
+                Submit Request
+              </Button>
             </div>
           </div>
         </div>

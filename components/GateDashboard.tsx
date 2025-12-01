@@ -25,6 +25,13 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vendorRemarks, setVendorRemarks] = useState('');
 
+  // Student approval modal state (Flow 1)
+  const [studentModalOpen, setStudentModalOpen] = useState(false);
+  const [selectedStudentRequest, setSelectedStudentRequest] = useState<StudentMovementRequest | null>(null);
+  const [studentVehicleNumber, setStudentVehicleNumber] = useState('');
+  const [studentRemarks, setStudentRemarks] = useState('');
+  const [isStudentActionLoading, setIsStudentActionLoading] = useState(false);
+
   // Guest Code States
   const [guestCode, setGuestCode] = useState('');
   const [foundContext, setFoundContext] = useState<FoundGuestContext | null>(null);
@@ -60,7 +67,8 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
         createdAt: log.timestamp,
         approvedBy: log.approvedBy,
         approvedAt: undefined,
-        rejectionReason: undefined
+        rejectionReason: undefined,
+        details: log.details,
       }));
   }, [logs]);
 
@@ -192,7 +200,6 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
   const handleStudentRequestAction = async (requestId: string, action: 'APPROVED' | 'REJECTED') => {
     try {
       const isApproved = action === 'APPROVED';
-
       await backendService.updateStudentMovementRequestStatus(requestId, {
         status: isApproved ? 'COMPLETED' : 'REJECTED',
         gateUserId: user.id,
@@ -204,6 +211,43 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
     } catch (error: any) {
       console.error('[GateDashboard] Error updating student request:', error);
       alert(error.message || `Failed to ${action === 'APPROVED' ? 'approve' : 'reject'} request. Please try again.`);
+    }
+  };
+
+  const openStudentModal = (request: StudentMovementRequest) => {
+    setSelectedStudentRequest(request);
+    setStudentVehicleNumber('');
+    setStudentRemarks('');
+    setStudentModalOpen(true);
+  };
+
+  const submitStudentApproval = async () => {
+    if (!selectedStudentRequest) return;
+    setIsStudentActionLoading(true);
+    try {
+      const vehicleText = studentVehicleNumber.trim()
+        ? `Vehicle: ${studentVehicleNumber.trim()}`
+        : '';
+      const remarksText = studentRemarks.trim();
+      const combinedRemarks = [vehicleText, remarksText].filter(Boolean).join(' | ') || undefined;
+
+      await backendService.updateStudentMovementRequestStatus(selectedStudentRequest.id, {
+        status: 'COMPLETED',
+        gateUserId: user.id,
+        remarks: combinedRemarks,
+      });
+
+      console.log(`[GateDashboard] Successfully approved student request: ${selectedStudentRequest.id}`);
+      setStudentModalOpen(false);
+      setSelectedStudentRequest(null);
+      setStudentVehicleNumber('');
+      setStudentRemarks('');
+      refreshData();
+    } catch (error: any) {
+      console.error('[GateDashboard] Error approving student request:', error);
+      alert(error.message || 'Failed to approve request. Please try again.');
+    } finally {
+      setIsStudentActionLoading(false);
     }
   };
 
@@ -234,75 +278,87 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
 
       {/* Live Student Requests Section */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                <i className="fa-solid fa-users"></i> Live Student Requests ({pendingStudentRequests.length})
-              </h3>
-              {pendingStudentRequests.length > 0 && (
-                <span className="h-2 w-2 bg-red-500 rounded-full animate-pulse"></span>
-              )}
-            </div>
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+              <i className="fa-solid fa-users"></i> Live Student Requests ({pendingStudentRequests.length})
+            </h3>
+            {pendingStudentRequests.length > 0 && (
+              <span className="h-2 w-2 bg-red-500 rounded-full animate-pulse"></span>
+            )}
           </div>
         </div>
         
-        <div className="p-6">
-          {pendingStudentRequests.length === 0 ? (
-            <div className="flex items-center justify-center py-8 text-slate-400">
-              <div className="text-center">
-                <i className="fa-solid fa-check-circle text-4xl mb-3 text-green-500"></i>
-                <p className="font-medium">All cleared! No pending requests.</p>
-              </div>
+        {pendingStudentRequests.length === 0 ? (
+          <div className="flex items-center justify-center py-8 text-slate-400">
+            <div className="text-center">
+              <i className="fa-solid fa-check-circle text-4xl mb-3 text-green-500"></i>
+              <p className="font-medium">All cleared! No pending requests.</p>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {pendingStudentRequests.map(request => (
-                <div key={request.id} className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                <tr>
+                  <th className="px-6 py-3 text-left font-semibold">Type</th>
+                  <th className="px-6 py-3 text-left font-semibold">Student</th>
+                  <th className="px-6 py-3 text-left font-semibold">Requested At</th>
+                  <th className="px-6 py-3 text-left font-semibold">Details / Remarks</th>
+                  <th className="px-6 py-3 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pendingStudentRequests.map(request => (
+                  <tr key={request.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-3 align-middle">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                         request.type === MovementType.EXIT 
                           ? 'bg-amber-100 text-amber-700' 
                           : 'bg-green-100 text-green-700'
                       }`}>
                         {request.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 align-middle">
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-slate-800">{request.studentName}</span>
+                        <span className="text-xs text-slate-500 font-mono">{request.studentId}</span>
                       </div>
-                      <div>
-                        <p className="font-semibold text-slate-800">{request.studentName}</p>
-                        <p className="text-xs text-slate-500">
-                          Requested at {new Date(request.createdAt).toLocaleString()}
-                        </p>
+                    </td>
+                    <td className="px-6 py-3 align-middle text-slate-600">
+                      {new Date(request.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-3 align-middle text-slate-600 max-w-xs">
+                      <span className="block truncate" title={request.details || ''}>
+                        {request.details || '-'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 align-middle text-right">
+                      <div className="inline-flex gap-2">
+                        <Button 
+                          variant="primary" 
+                          size="sm"
+                          onClick={() => handleStudentRequestAction(request.id, 'APPROVED')}
+                        >
+                          <i className="fa-solid fa-check mr-1"></i> Approve
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={() => handleStudentRequestAction(request.id, 'REJECTED')}
+                          className="border-red-300 text-red-600 hover:bg-red-50"
+                        >
+                          <i className="fa-solid fa-times mr-1"></i> Deny
+                        </Button>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 mb-1">Student ID:</p>
-                      <p className="text-sm font-mono text-slate-700">{request.studentId}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="primary" 
-                      size="sm"
-                      onClick={() => handleStudentRequestAction(request.id, 'APPROVED')}
-                      className="flex-1"
-                    >
-                      <i className="fa-solid fa-check mr-2"></i> Approve
-                    </Button>
-                    <Button 
-                      variant="secondary" 
-                      size="sm"
-                      onClick={() => handleStudentRequestAction(request.id, 'REJECTED')}
-                      className="flex-1 border-red-300 text-red-600 hover:bg-red-50"
-                    >
-                      <i className="fa-solid fa-times mr-2"></i> Deny
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -589,6 +645,69 @@ export const GateDashboard: React.FC<Props> = ({ user, refreshData, logs, vendor
                 Cancel
               </button>
            </div>
+        </div>
+      )}
+
+      {/* Student Approval Modal */}
+      {studentModalOpen && selectedStudentRequest && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-fade-in-up">
+            <h3 className="text-xl font-bold text-slate-800 mb-2">
+              Approve Student {selectedStudentRequest.type === MovementType.ENTRY ? 'Entry' : 'Exit'}
+            </h3>
+            <p className="text-slate-500 text-sm mb-4">
+              <span className="font-semibold">{selectedStudentRequest.studentName}</span> ({selectedStudentRequest.studentId})
+            </p>
+
+            <div className="mb-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Vehicle Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={studentVehicleNumber}
+                  onChange={(e) => setStudentVehicleNumber(e.target.value)}
+                  placeholder="e.g. UP32-XX-XXXX"
+                  className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-iim-green focus:border-transparent outline-none"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Remarks (Optional)
+                </label>
+                <textarea
+                  value={studentRemarks}
+                  onChange={(e) => setStudentRemarks(e.target.value)}
+                  placeholder="Any additional notes for this movement..."
+                  rows={3}
+                  className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-iim-green focus:border-transparent outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setStudentModalOpen(false);
+                  setSelectedStudentRequest(null);
+                }}
+                disabled={isStudentActionLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={submitStudentApproval}
+                isLoading={isStudentActionLoading}
+                disabled={isStudentActionLoading}
+              >
+                Confirm {selectedStudentRequest.type}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

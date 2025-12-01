@@ -293,7 +293,7 @@ export const createMovementLog = async (req: Request, res: Response) => {
 export const updateStudentMovementRequest = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, gateUserId, rejectionReason } = req.body;
+    const { status, gateUserId, rejectionReason, remarks } = req.body;
 
     // Validation
     if (!status) {
@@ -332,6 +332,9 @@ export const updateStudentMovementRequest = async (req: Request, res: Response) 
 
     if (status === 'REJECTED' && rejectionReason) {
       updatePayload.remarks = `Request rejected by gate staff: ${rejectionReason}`;
+    } else if (status === 'COMPLETED' && remarks) {
+      // For approved movements, store any gate-side remarks (e.g., vehicle details)
+      updatePayload.remarks = remarks;
     }
 
     // Update the request: set status to COMPLETED/REJECTED and gate_user_id
