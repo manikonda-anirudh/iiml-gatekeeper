@@ -1,0 +1,7 @@
+{
+  "name": "IIML Gatekeeper",
+  "description": "A comprehensive gate entry and exit management system for IIM Lucknow, streamlining interactions between students, gate staff, and council members.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
